@@ -1,24 +1,93 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Three.js Sample</title>
-
-  <style>
-    body {
-      margin: 0;
-      overflow: hidden;
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Polytope Three.js Viewer</title>
+  <link rel="stylesheet" href="./style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js"
+      }
     }
-
-    canvas {
-      display: block;
-    }
-  </style>
+  </script>
 </head>
 <body>
+  <main class="app">
+    <section class="stage" aria-label="Polytope viewer">
+      <canvas id="viewer"></canvas>
+      <button id="toggleBtn">>></button>
+      <div id="stats" class="stats">Loading...</div>
+    </section>
 
-  <script type="module" src="./main.js"></script>
+    <aside id="sidebar" class="panel">
+      <h1>Polytope Viewer</h1>
 
+      <label class="control">
+        <span>FoV <output id="fovValue"></output></span>
+        <input id="fov" type="range" min="-180" max="180" step="0.1" value="0" />
+      </label>
+
+      <label class="control">
+        <span>Filter <output id="filterValue"></output></span>
+        <input id="filter" type="range" min="-90" max="90" step="0.1" value="-90" />
+      </label>
+
+      <label class="control">
+        <span>Stereo</span>
+        <select id="stereo">
+          <option value="off">Off</option>
+          <option value="parallel">Side-by-side</option>
+          <option value="cross">Cross-eyed</option>
+        </select>
+      </label>
+
+      <div class="buttons">
+        <button id="resetRotation" type="button">Reset rotation</button>
+        <button id="downloadMesh" type="button">Download mesh JSON</button>
+      </div>
+
+      <label class="control">
+        <span>Mesh / OFF URL</span>
+        <input id="url" type="url" placeholder="./meshes/tesseract.crfmesh.json" />
+      </label>
+      <button id="loadUrl" type="button">Load URL</button>
+
+      <label class="control file">
+        <span>Local .crfmesh.json / .off</span>
+        <input id="fileInput" type="file" accept=".json,.off" />
+      </label>
+
+      <p class="help">
+        Left drag: visible 3D spin. Right drag or two-finger drag: 4D rotation. Wheel: zw rotation.
+        URL parameters: <code>?mesh=...</code>, <code>?off=...</code>, <code>?fov=60</code>, <code>?filter=-90</code>, <code>?stereo=cross</code>.
+      </p>
+      <p id="status" class="status">Ready.</p>
+    </aside>
+  </main>
+
+  <script type="module" src="./src/main.js">
+    const params = new URLSearchParams(window.location.search);
+    const btn = document.getElementById('toggleBtn');
+    const sidebar = document.getElementById('sidebar');
+
+    let isClosed = false;
+
+    btn.addEventListener('click', () => {
+      isClosed = !isClosed;
+
+      sidebar.classList.toggle('closed');
+      btn.classList.toggle('closed');
+
+      btn.textContent = isClosed ? '<<' : '>>';
+    });
+
+    // ===== Three.js例 =====
+    // const renderer = new THREE.WebGLRenderer();
+    // renderer.setSize(window.innerWidth, window.innerHeight);
+    // document.getElementById('app').appendChild(renderer.domElement);
+
+  </script>
 </body>
 </html>

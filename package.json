@@ -1,0 +1,10 @@
+{
+  "name": "crf-three-viewer",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "serve": "python3 -m http.server 8080",
+    "convert": "node tools/off-to-crfmesh.mjs"
+  }
+}
