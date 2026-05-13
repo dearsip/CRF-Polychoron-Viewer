@@ -55,7 +55,7 @@ void main() {
 
   vec4 cellPos = rotate4(rotate4(applyAxis(aNormal4), uAutoRot1From, to1), uAutoRot2From, to2);
   bool hiddenByFoV = cellPos.w + position.x * distanceR > -1e-9 * cos(theta);
-  bool hiddenByFilter = cellPos.z < sin(radians(uFilter)) - 1e-9;
+  bool hiddenByFilter = cellPos.z > -sin(radians(uFilter)) - 1e-9;
   if (hiddenByFoV || hiddenByFilter) {
     gl_Position = vec4(-2.0, -2.0, 0.0, 1.0);
     vColor = vec4(0.0);

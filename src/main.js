@@ -15,7 +15,7 @@ renderer.setClearColor(0xf4f4f4, 1);
 const scene = new THREE.Scene();
 const baseFov = 38;
 const camera = new THREE.PerspectiveCamera(baseFov, 1, 0.01, 100);
-camera.position.set(0, 0, 6);
+camera.position.set(0, 0, 7);
 camera.lookAt(0, 0, 0);
 
 const stereoCamera = new THREE.StereoCamera();
@@ -25,10 +25,10 @@ stereoCamera.aspect = 0.5;
 const uniforms = {
   uFoV: { value: Number(params.get('fov') ?? 0) },
   uFilter: { value: Number(params.get('filter') ?? -90) },
-  uAxis1: { value: new THREE.Vector4(1, 0, 0, 0) },
-  uAxis2: { value: new THREE.Vector4(0, 1, 0, 0) },
-  uAxis3: { value: new THREE.Vector4(0, 0, 1, 0) },
-  uAxis4: { value: new THREE.Vector4(0, 0, 0, 1) },
+  uAxis1: { value: getAxisVector('axis1', new THREE.Vector4(1, 0, 0, 0)) },
+  uAxis2: { value: getAxisVector('axis2', new THREE.Vector4(0, 1, 0, 0)) },
+  uAxis3: { value: getAxisVector('axis3', new THREE.Vector4(0, 0, 1, 0)) },
+  uAxis4: { value: getAxisVector('axis4', new THREE.Vector4(0, 0, 0, 1)) },
   uAutoRot1From: { value: new THREE.Vector4(0, 0, 0, -1) },
   uAutoRot1To: { value: new THREE.Vector4(1, 0, 0, 0) },
   uAutoRot1Speed: { value: 0 },
@@ -81,10 +81,11 @@ $('loadUrl').addEventListener('click', () => loadFromUrl(urlInput.value.trim()))
 $('fileInput').addEventListener('change', event => loadFromFile(event.target.files?.[0]));
 $('downloadMesh').addEventListener('click', downloadCurrentMesh);
 
+
 const app = document.querySelector('.app');
 const btn = document.getElementById('toggleBtn');
 
-let isClosed = params.get('panel') === '0';
+let isClosed = params.get('panel') === 'hide';
 
 function updatePanel() {
   app.classList.toggle('closed', isClosed);
@@ -99,6 +100,7 @@ btn.addEventListener('click', () => {
   isClosed = !isClosed;
   updatePanel();
 });
+$('exportUrl').addEventListener('click', exportUrl);
 
 function updateLabels() {
   fovValue.textContent = Number(uniforms.uFoV.value).toFixed(1);
@@ -108,6 +110,62 @@ function updateLabels() {
 function setStatus(text, kind = '') {
   statusEl.textContent = text;
   statusEl.dataset.kind = kind;
+}
+
+function vectorToParam(v) {
+  return [v.x, v.y, v.z, v.w]
+    .map(n => Number(n.toFixed(6)))
+    .join(',');
+}
+
+function updateUrlParams() {
+  const next = new URLSearchParams(location.search);
+
+  next.set('fov', String(Number(uniforms.uFoV.value.toFixed(1))));
+  next.set('filter', String(Number(uniforms.uFilter.value.toFixed(1))));
+  next.set('stereo', stereoSelect.value);
+
+  next.set('axis1', vectorToParam(uniforms.uAxis1.value));
+  next.set('axis2', vectorToParam(uniforms.uAxis2.value));
+  next.set('axis3', vectorToParam(uniforms.uAxis3.value));
+  next.set('axis4', vectorToParam(uniforms.uAxis4.value));
+
+  if (urlInput.value.trim()) {
+    next.set('mesh', urlInput.value.trim());
+  }
+
+  const newUrl = `${location.pathname}?${next.toString()}`;
+  history.replaceState(null, '', newUrl);
+}
+
+async function exportUrl() {
+  updateUrlParams();
+
+  const url = location.href;
+
+  try {
+    await navigator.clipboard.writeText(url);
+    setStatus('Export URL copied to clipboard.');
+  } catch {
+    setStatus(url);
+  }
+}
+
+function getAxisVector(name, fallback) {
+  const raw = params.get(name);
+
+  if (!raw) return fallback;
+
+  const values = raw
+    .split(',')
+    .map(v => Number(v.trim()));
+
+  if (values.length !== 4 || values.some(v => Number.isNaN(v))) {
+    console.warn(`Invalid ${name} parameter`);
+    return fallback;
+  }
+
+  return new THREE.Vector4(...values);
 }
 
 function createGeometry(data) {

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Polytope Three.js Viewer</title>
+  <title>Polychoron Viewer</title>
   <link rel="stylesheet" href="./style.css" />
   <script type="importmap">
     {
@@ -15,14 +15,13 @@
 </head>
 <body>
   <main class="app">
-    <section class="stage" aria-label="Polytope viewer">
+    <section class="stage" aria-label="Polychoron viewer">
       <canvas id="viewer"></canvas>
       <button id="toggleBtn">>></button>
-      <div id="stats" class="stats">Loading...</div>
     </section>
 
     <aside id="sidebar" class="panel">
-      <h1>Polytope Viewer</h1>
+      <h1>Polychoron Viewer</h1>
 
       <label class="control">
         <span>FoV <output id="fovValue"></output></span>
@@ -46,6 +45,7 @@
       <div class="buttons">
         <button id="resetRotation" type="button">Reset rotation</button>
         <button id="downloadMesh" type="button">Download mesh JSON</button>
+        <button id="exportUrl" type="button">Export URL</button>
       </div>
 
       <label class="control">
@@ -61,9 +61,10 @@
 
       <p class="help">
         Left drag: visible 3D spin. Right drag or two-finger drag: 4D rotation. Wheel: zw rotation.
-        URL parameters: <code>?mesh=...</code>, <code>?off=...</code>, <code>?fov=60</code>, <code>?filter=-90</code>, <code>?stereo=cross</code>.
+        URL parameters: <code>?mesh=...</code>, <code>?off=...</code>, <code>?fov=0</code>, <code>?filter=-90</code>, <code>?stereo=parallel</code>, <code>?stereo=cross</code>, <code>?panel=hide</code>, <code>?axis1=1,0,0,0&...&axis4=0,0,0,1</code>.
       </p>
       <p id="status" class="status">Ready.</p>
+      <p id="stats" class="help">Loading...</p>
     </aside>
   </main>
 

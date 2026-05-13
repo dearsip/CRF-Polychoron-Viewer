@@ -89,8 +89,19 @@ input[type="url"], select {
   background: rgba(255,255,255,.06);
   color: inherit;
 }
+select {
+  background: #111;
+  color: #f4f4f4;
+}
+select option {
+  background: #111;
+  color: #f4f4f4;
+}
 .file input { font-size: 13px; }
 .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.buttons button:nth-child(3) {
+  grid-column: 1 / -1;
+}
 button {
   padding: 9px 10px;
   border: 0;
