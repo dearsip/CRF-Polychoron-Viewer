@@ -75,10 +75,7 @@ const material = new THREE.ShaderMaterial({
 
 let meshObject = null;
 let currentMeshData = null;
-const controls = new CRFControls4D(canvas, uniforms, {
-  getZoom: () => zoom,
-  setZoom: value => setZoom(value)
-});
+const controls = new CRFControls4D(canvas, uniforms);
 
 const fovSlider = $('fov');
 const filterSlider = $('filter');

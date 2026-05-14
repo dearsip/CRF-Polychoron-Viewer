@@ -18,18 +18,15 @@ export class CRFControls4D {
     ];
     this.pointerMap = new Map();
     this.gestureChannel = null;
+    this.gestureArcball = null;
+    this.useArcball = true;
+    this.arcballMaxRadius = options.arcballMaxRadius ?? 0.8;
     this.dragSpeed = 0.002;
-    this.wheelZoomSpeed = options.wheelZoomSpeed ?? 0.002;
-    this.pinchZoomSpeed = options.pinchZoomSpeed ?? 1.0;
-    this.getZoom = options.getZoom ?? (() => 0);
-    this.setZoom = options.setZoom ?? (() => {});
     this.minAutoSpeed = 0.03;
     this.maxAutoSpeed = 10.0;
     this.lastAutoCandidate = null;
     this.contextHandler = event => event.preventDefault();
-    this.autoReleaseGrace = 0.03;
-    this.arcballMaxRadius = 0.8;
-    this.useArcball = true;
+    this.autoReleaseGrace = 0.1;
 
     domElement.addEventListener('contextmenu', this.contextHandler);
     domElement.addEventListener('pointerdown', this.onPointerDown);
@@ -119,6 +116,15 @@ export class CRFControls4D {
       lastTime: this.now(),
       arcball: this.useArcball ? this.getArcballFromPointer(event) : null
     });
+
+    if (this.useArcball) {
+      this.gestureArcball = nextChannel === 2
+        ? this.getArcballFromPointerMap()
+        : this.getArcballFromClientPosition(event.clientX, event.clientY);
+    } else {
+      this.gestureArcball = null;
+    }
+
     this.lastAutoCandidate = null;
   };
 
@@ -132,7 +138,7 @@ export class CRFControls4D {
     const dy = event.clientY - prev.y;
     const dt = Math.max(1 / 240, now - prev.lastTime);
     const channel = this.getGestureChannel(prev, event, active);
-    if (channel === 2 && active >= 2 && this.handlePinchZoom(event, prev, now, dt)) { return; }
+    if (channel === 2 && active >= 2 && this.handleMultiTouchDrag(event, prev, now, dt)) { return; }
 
     prev.x = event.clientX;
     prev.y = event.clientY;
@@ -141,9 +147,9 @@ export class CRFControls4D {
     if (Math.abs(dx) + Math.abs(dy) < 0.0001) return;
 
     if (channel === 2) {
-      this.rotate4D(dx, dy, dt, prev.arcball);
+      this.rotate4D(dx, dy, dt, this.gestureArcball);
     } else {
-      this.rotate3D(dx, dy, dt, prev.arcball);
+      this.rotate3D(dx, dy, dt, this.gestureArcball);
     }
   };
 
@@ -161,9 +167,11 @@ export class CRFControls4D {
 
       this.lastAutoCandidate = null;
       this.gestureChannel = null;
+      this.gestureArcball = null;
       this.activeManualChannel = null;
     } else if (this.pointerMap.size === 0) {
       this.gestureChannel = null;
+      this.gestureArcball = null;
       this.activeManualChannel = null;
     }
   };
@@ -190,6 +198,58 @@ export class CRFControls4D {
     };
   }
 
+  getGestureChannel(prev, event, activePointerCount) {
+    if (this.gestureChannel === 2) return 2;
+
+    const shouldPromoteTo4D = activePointerCount >= 2 || prev.button === 2 || (event.buttons & 2) !== 0;
+    if (shouldPromoteTo4D) {
+      this.commitAutoRotation(2);
+      this.gestureChannel = 2;
+      if (this.useArcball) this.gestureArcball = this.getArcballFromPointerMap();
+      this.lastAutoCandidate = null;
+      return 2;
+    }
+
+    if (this.gestureChannel == null) this.gestureChannel = 1;
+    return this.gestureChannel;
+  }
+
+  getArcballFromClientPosition(clientX, clientY) {
+    const rect = this.domElement.getBoundingClientRect();
+    const radius = Math.max(1, Math.min(rect.width, rect.height) * 0.5);
+
+    let x = (clientX - (rect.left + rect.width * 0.5)) / radius;
+    let y = -((clientY - (rect.top + rect.height * 0.5)) / radius);
+    const rawR = Math.hypot(x, y);
+
+    if (rawR < 1e-7) {
+      return { ux: 1, uy: 0, s: 0, c: 1 };
+    }
+
+
+    const r = Math.min(rawR / this.arcballMaxRadius, 1);
+
+    return {
+      ux: x / rawR,
+      uy: y / rawR,
+      s: r,
+      c: Math.sqrt(Math.max(0, 1 - r * r))
+    };
+  }
+
+  getArcballFromPointerMap() {
+    if (this.pointerMap.size === 0) return null;
+
+    let x = 0;
+    let y = 0;
+    for (const pointer of this.pointerMap.values()) {
+      x += pointer.x;
+      y += pointer.y;
+    }
+    const n = this.pointerMap.size;
+    return this.getArcballFromClientPosition(x / n, y / n);
+  }
+
   applyArcballTilt(v, arcball, depthIndex) {
     if (!arcball || Math.abs(arcball.s) < 1e-7) return v.clone();
 
@@ -199,8 +259,6 @@ export class CRFControls4D {
     const tangentialY = a[1] - radial * arcball.uy;
     const depth = a[depthIndex];
 
-    // Rotate in the plane spanned by screen-radial direction and depth axis.
-    // This maps depthAxis -> s * radial + c * depthAxis.
     const tiltedRadial = arcball.c * radial + arcball.s * depth;
     const tiltedDepth = -arcball.s * radial + arcball.c * depth;
 
@@ -210,27 +268,7 @@ export class CRFControls4D {
     return new THREE.Vector4(a[0], a[1], a[2], a[3]);
   }
 
-  getGestureChannel(prev, event, activePointerCount) {
-    if (this.gestureChannel === 2) return 2;
-
-    const shouldPromoteTo4D = activePointerCount >= 2 || prev.button === 2 || (event.buttons & 2) !== 0;
-    if (shouldPromoteTo4D) {
-      this.commitAutoRotation(2);
-      this.gestureChannel = 2;
-      this.lastAutoCandidate = null;
-      return 2;
-    }
-
-    if (this.gestureChannel == null) this.gestureChannel = 1;
-    return this.gestureChannel;
-  }
-
-  addZoom(delta) {
-    if (!Number.isFinite(delta) || Math.abs(delta) < 1e-7) return;
-    this.setZoom(this.getZoom() + delta);
-  }
-
-  handlePinchZoom(event, prev, now, dt) {
+  handleMultiTouchDrag(event, prev, now, dt) {
     if (this.pointerMap.size < 2) return false;
 
     const moved = this.pointerMap.get(event.pointerId);
@@ -238,35 +276,10 @@ export class CRFControls4D {
     if (!moved || !otherEntry) return false;
 
     const other = otherEntry[1];
-    const a = {
-      oldX: prev.x,
-      oldY: prev.y,
-      newX: event.clientX,
-      newY: event.clientY
-    };
-    const b = {
-      oldX: other.x,
-      oldY: other.y,
-      newX: other.x,
-      newY: other.y
-    };
-    const oldDistance = Math.hypot(a.oldX - b.oldX, a.oldY - b.oldY);
-    const newDistance = Math.hypot(a.newX - b.newX, a.newY - b.newY);
-
-    let zoomChanged = false;
-    if (oldDistance > 1e-3 && newDistance > 1e-3) {
-      // zoom is logarithmic: doubling the finger distance increases zoom by 1.
-      const zoomDelta = Math.log2(newDistance / oldDistance) * this.pinchZoomSpeed;
-      if (Math.abs(zoomDelta) > 1e-7) {
-        this.addZoom(zoomDelta);
-        zoomChanged = true;
-      }
-    }
-
-    const oldCenterX = (a.oldX + b.oldX) * 0.5;
-    const oldCenterY = (a.oldY + b.oldY) * 0.5;
-    const newCenterX = (a.newX + b.newX) * 0.5;
-    const newCenterY = (a.newY + b.newY) * 0.5;
+    const oldCenterX = (prev.x + other.x) * 0.5;
+    const oldCenterY = (prev.y + other.y) * 0.5;
+    const newCenterX = (event.clientX + other.x) * 0.5;
+    const newCenterY = (event.clientY + other.y) * 0.5;
     const centerDx = newCenterX - oldCenterX;
     const centerDy = newCenterY - oldCenterY;
 
@@ -275,10 +288,7 @@ export class CRFControls4D {
     prev.lastTime = now;
 
     if (Math.abs(centerDx) + Math.abs(centerDy) >= 0.0001) {
-      this.rotate4D(centerDx, centerDy, dt);
-    } else if (zoomChanged) {
-      // Pure pinch should not reuse an old flick candidate as inertia.
-      this.lastAutoCandidate = null;
+      this.rotate4D(centerDx, centerDy, dt, this.gestureArcball);
     }
 
     return true;
@@ -286,7 +296,6 @@ export class CRFControls4D {
 
   onWheel = (event) => {
     event.preventDefault();
-    this.addZoom(-event.deltaY * this.wheelZoomSpeed);
   };
 
   rotate4D(dx, dy, dt, arcball) {
