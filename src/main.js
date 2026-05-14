@@ -75,7 +75,10 @@ const material = new THREE.ShaderMaterial({
 
 let meshObject = null;
 let currentMeshData = null;
-const controls = new CRFControls4D(canvas, uniforms);
+const controls = new CRFControls4D(canvas, uniforms, {
+  getZoom: () => zoom,
+  setZoom: value => setZoom(value)
+});
 
 const fovSlider = $('fov');
 const filterSlider = $('filter');
@@ -106,8 +109,7 @@ filterSlider.addEventListener('input', () => {
   updateLabels();
 });
 zoomSlider.addEventListener('input', () => {
-  zoom = clampZoom(zoomSlider.value);
-  updateLabels();
+  setZoom(zoomSlider.value);
 });
 stereoSelect.addEventListener('change', () => {});
 arcballToggle.addEventListener('change', () => {
@@ -142,6 +144,12 @@ function updateLabels() {
   fovValue.textContent = Number(uniforms.uFoV.value).toFixed(1);
   filterValue.textContent = Number(uniforms.uFilter.value).toFixed(1);
   zoomValue.textContent = zoom.toFixed(2);
+}
+
+function setZoom(value) {
+  zoom = clampZoom(value);
+  zoomSlider.value = zoom;
+  updateLabels();
 }
 
 function setStatus(text, kind = '') {
