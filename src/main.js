@@ -13,8 +13,20 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.setClearColor(0xf4f4f4, 1);
 
 const scene = new THREE.Scene();
-const baseFov = 38;
-const camera = new THREE.PerspectiveCamera(baseFov, 1, 0.01, 100);
+const defaultFov3 = 38;
+let zoom = clampZoom(params.get('zoom') ?? 0);
+
+function getBaseFov3() {
+  return defaultFov3 * Math.pow(2, -zoom);
+}
+
+function clampZoom(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(8, Math.max(0, n));
+}
+
+const camera = new THREE.PerspectiveCamera(getBaseFov3(), 1, 0.01, 100);
 camera.position.set(0, 0, 7);
 camera.lookAt(0, 0, 0);
 
@@ -22,21 +34,33 @@ const stereoCamera = new THREE.StereoCamera();
 stereoCamera.eyeSep = Number(params.get('eyeSep') ?? 0.3);
 stereoCamera.aspect = 0.5;
 
+const stereoFocusPoint = new THREE.Vector3(0, 0, 0);
+const cameraWorldPos = new THREE.Vector3();
+
+function updateStereoFocus() {
+  camera.getWorldPosition(cameraWorldPos);
+  camera.focus = cameraWorldPos.distanceTo(stereoFocusPoint);
+}
+
+const startTime = performance.now() * 0.001;
+const autoRot1Speed = getNumberParam('autoRot1Speed', 0);
+const autoRot2Speed = getNumberParam('autoRot2Speed', 0);
 const uniforms = {
   uFoV: { value: Number(params.get('fov') ?? 0) },
   uFilter: { value: Number(params.get('filter') ?? -90) },
-  uAxis1: { value: getAxisVector('axis1', new THREE.Vector4(1, 0, 0, 0)) },
-  uAxis2: { value: getAxisVector('axis2', new THREE.Vector4(0, 1, 0, 0)) },
-  uAxis3: { value: getAxisVector('axis3', new THREE.Vector4(0, 0, 1, 0)) },
-  uAxis4: { value: getAxisVector('axis4', new THREE.Vector4(0, 0, 0, 1)) },
-  uAutoRot1From: { value: new THREE.Vector4(0, 0, 0, -1) },
-  uAutoRot1To: { value: new THREE.Vector4(1, 0, 0, 0) },
-  uAutoRot1Speed: { value: 0 },
-  uAutoRot2From: { value: new THREE.Vector4(1, 0, 0, 0) },
-  uAutoRot2To: { value: new THREE.Vector4(0, 1, 0, 0) },
-  uAutoRot2Speed: { value: 0 },
-  uTime: { value: 0 },
-  uRotTime: { value: 0 },
+  uAxis1: { value: getVector4Param('axis1', new THREE.Vector4(1, 0, 0, 0)) },
+  uAxis2: { value: getVector4Param('axis2', new THREE.Vector4(0, 1, 0, 0)) },
+  uAxis3: { value: getVector4Param('axis3', new THREE.Vector4(0, 0, 1, 0)) },
+  uAxis4: { value: getVector4Param('axis4', new THREE.Vector4(0, 0, 0, 1)) },
+  uAutoRot1From: { value: getVector4Param('autoRot1From', new THREE.Vector4(0, 0, 0, -1), true) },
+  uAutoRot1To: { value: getVector4Param('autoRot1To', new THREE.Vector4(1, 0, 0, 0), true) },
+  uAutoRot1Speed: { value: autoRot1Speed },
+  uAutoRot1Time: { value: startTime },
+  uAutoRot2From: { value: getVector4Param('autoRot2From', new THREE.Vector4(1, 0, 0, 0), true) },
+  uAutoRot2To: { value: getVector4Param('autoRot2To', new THREE.Vector4(0, 0, 1, 0), true) },
+  uAutoRot2Speed: { value: autoRot2Speed },
+  uAutoRot2Time: { value: startTime },
+  uTime: { value: startTime },
   uLightDir: { value: new THREE.Vector3(0.45, 0.6, 0.7).normalize() }
 };
 
@@ -55,16 +79,22 @@ const controls = new CRFControls4D(canvas, uniforms);
 
 const fovSlider = $('fov');
 const filterSlider = $('filter');
+const zoomSlider = $('zoom');
+const arcballToggle = $('arcball');
 const fovValue = $('fovValue');
 const filterValue = $('filterValue');
+const zoomValue = $('zoomValue');
 const stereoSelect = $('stereo');
 const statusEl = $('status');
 const statsEl = $('stats');
 const urlInput = $('url');
 
 fovSlider.value = uniforms.uFoV.value;
+zoomSlider.value = zoom;
 filterSlider.value = uniforms.uFilter.value;
 stereoSelect.value = params.get('stereo') ?? 'off';
+arcballToggle.checked = params.get('arcball') === '1';
+controls.setUseArcball(arcballToggle.checked);
 updateLabels();
 
 fovSlider.addEventListener('input', () => {
@@ -75,12 +105,18 @@ filterSlider.addEventListener('input', () => {
   uniforms.uFilter.value = Number(filterSlider.value);
   updateLabels();
 });
+zoomSlider.addEventListener('input', () => {
+  zoom = clampZoom(zoomSlider.value);
+  updateLabels();
+});
 stereoSelect.addEventListener('change', () => {});
+arcballToggle.addEventListener('change', () => {
+  controls.setUseArcball(arcballToggle.checked);
+});
 $('resetRotation').addEventListener('click', () => controls.reset());
 $('loadUrl').addEventListener('click', () => loadFromUrl(urlInput.value.trim()));
 $('fileInput').addEventListener('change', event => loadFromFile(event.target.files?.[0]));
 $('downloadMesh').addEventListener('click', downloadCurrentMesh);
-
 
 const app = document.querySelector('.app');
 const btn = document.getElementById('toggleBtn');
@@ -105,6 +141,7 @@ $('exportUrl').addEventListener('click', exportUrl);
 function updateLabels() {
   fovValue.textContent = Number(uniforms.uFoV.value).toFixed(1);
   filterValue.textContent = Number(uniforms.uFilter.value).toFixed(1);
+  zoomValue.textContent = zoom.toFixed(2);
 }
 
 function setStatus(text, kind = '') {
@@ -112,23 +149,43 @@ function setStatus(text, kind = '') {
   statusEl.dataset.kind = kind;
 }
 
+function numberToParam(n, digits = 6) {
+  if (!Number.isFinite(n)) return '0';
+  return String(Number(n.toFixed(digits)));
+}
+
 function vectorToParam(v) {
   return [v.x, v.y, v.z, v.w]
-    .map(n => Number(n.toFixed(6)))
+    .map(n => numberToParam(n))
     .join(',');
 }
 
+function setAutoRotationParams(next, channel) {
+  const from = uniforms[`uAutoRot${channel}From`].value;
+  const to = uniforms[`uAutoRot${channel}To`].value;
+  const speed = uniforms[`uAutoRot${channel}Speed`].value;
+
+  next.set(`autoRot${channel}From`, vectorToParam(from));
+  next.set(`autoRot${channel}To`, vectorToParam(to));
+  next.set(`autoRot${channel}Speed`, numberToParam(speed));
+  next.set('arcball', arcballToggle.checked ? '1' : '0');
+}
+
 function updateUrlParams() {
-  const next = new URLSearchParams(location.search);
+  const next = new URLSearchParams();
 
   next.set('fov', String(Number(uniforms.uFoV.value.toFixed(1))));
   next.set('filter', String(Number(uniforms.uFilter.value.toFixed(1))));
+  next.set('zoom', String(Number(zoom.toFixed(2))));
   next.set('stereo', stereoSelect.value);
 
   next.set('axis1', vectorToParam(uniforms.uAxis1.value));
   next.set('axis2', vectorToParam(uniforms.uAxis2.value));
   next.set('axis3', vectorToParam(uniforms.uAxis3.value));
   next.set('axis4', vectorToParam(uniforms.uAxis4.value));
+
+  setAutoRotationParams(next, 1);
+  setAutoRotationParams(next, 2);
 
   if (urlInput.value.trim()) {
     next.set('mesh', urlInput.value.trim());
@@ -151,21 +208,43 @@ async function exportUrl() {
   }
 }
 
-function getAxisVector(name, fallback) {
+function getNumberParam(name, fallback) {
+  const raw = params.get(name);
+  if (raw == null) return fallback;
+
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    console.warn(`Invalid ${name} parameter`);
+    return fallback;
+  }
+
+  return value;
+}
+
+function getVector4Param(name, fallback, normalize = false) {
   const raw = params.get(name);
 
-  if (!raw) return fallback;
+  if (!raw) return fallback.clone();
 
   const values = raw
     .split(',')
     .map(v => Number(v.trim()));
 
-  if (values.length !== 4 || values.some(v => Number.isNaN(v))) {
+  if (values.length !== 4 || values.some(v => !Number.isFinite(v))) {
     console.warn(`Invalid ${name} parameter`);
-    return fallback;
+    return fallback.clone();
   }
 
-  return new THREE.Vector4(...values);
+  const result = new THREE.Vector4(...values);
+  if (normalize) {
+    if (result.lengthSq() < 1e-12) {
+      console.warn(`Invalid ${name} parameter: zero vector`);
+      return fallback.clone();
+    }
+    result.normalize();
+  }
+
+  return result;
 }
 
 function createGeometry(data) {
@@ -265,8 +344,9 @@ function resizeRenderer() {
   const rect = canvas.parentElement.getBoundingClientRect();
   const width = Math.max(1, Math.floor(rect.width));
   const height = Math.max(1, Math.floor(rect.height));
-  const needsResize = canvas.width !== Math.floor(width * renderer.getPixelRatio()) ||
-                      canvas.height !== Math.floor(height * renderer.getPixelRatio());
+  const pixelRatio = renderer.getPixelRatio();
+  const needsResize = canvas.width !== Math.floor(width * pixelRatio) ||
+                      canvas.height !== Math.floor(height * pixelRatio);
   if (needsResize) renderer.setSize(width, height, false);
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
@@ -276,12 +356,14 @@ function resizeRenderer() {
 function setCameraForViewport(viewW, viewH) {
   camera.aspect = viewW / viewH;
 
+  const baseFov3 = getBaseFov3();
+
   if (viewW < viewH) {
-    const fovRad = THREE.MathUtils.degToRad(baseFov);
+    const fovRad = THREE.MathUtils.degToRad(baseFov3);
     const adjustedFovRad = 2 * Math.atan(Math.tan(fovRad / 2) * (viewH / viewW));
     camera.fov = THREE.MathUtils.radToDeg(adjustedFovRad);
   } else {
-    camera.fov = baseFov;
+    camera.fov = baseFov3;
   }
 
   camera.updateProjectionMatrix();
@@ -304,6 +386,7 @@ function render() {
     stereoCamera.update(camera);
     const half = Math.floor(width / 2);
     setCameraForViewport(half, height);
+    updateStereoFocus();
     const leftCamera = mode === 'cross' ? stereoCamera.cameraR : stereoCamera.cameraL;
     const rightCamera = mode === 'cross' ? stereoCamera.cameraL : stereoCamera.cameraR;
 

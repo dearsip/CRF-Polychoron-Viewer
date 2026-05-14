@@ -157,3 +157,52 @@ code {
 #toggleBtn.closed {
   right: 20px;
 }
+
+.check-control {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  width: fit-content;
+  cursor: pointer;
+  user-select: none;
+}
+.check-control > span {
+  display: inline;
+  color: #d8d8d8;
+}
+.check-control input[type="checkbox"] {
+  appearance: none;
+  width: 44px;
+  height: 24px;
+  margin: 0;
+  border: 1px solid rgba(255,255,255,.24);
+  border-radius: 999px;
+  background: rgba(255,255,255,.14);
+  cursor: pointer;
+  position: relative;
+  transition: background .15s ease, border-color .15s ease;
+}
+.check-control input[type="checkbox"]::before {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  left: 2px;
+  top: 2px;
+  border-radius: 50%;
+  background: #f4f4f4;
+  transition: transform .15s ease;
+}
+.check-control input[type="checkbox"]:checked {
+  background: #3e7cf7;
+  border-color: #5f8cff;
+}
+.check-control input[type="checkbox"]:checked::before {
+  transform: translateX(20px);
+}
+.check-control input[type="checkbox"]:focus-visible {
+  outline: 2px solid #8db0ff;
+  outline-offset: 3px;
+}

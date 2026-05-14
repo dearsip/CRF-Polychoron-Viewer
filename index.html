@@ -21,16 +21,23 @@
     </section>
 
     <aside id="sidebar" class="panel">
-      <h1>Polychoron Viewer</h1>
+      <h1> <a href="https://github.com/dearsip/CRF-Polychoron-Viewer" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none;"> Polychoron Viewer</a></h1>
 
       <label class="control">
         <span>FoV <output id="fovValue"></output></span>
         <input id="fov" type="range" min="-180" max="180" step="0.1" value="0" />
       </label>
-
       <label class="control">
         <span>Filter <output id="filterValue"></output></span>
         <input id="filter" type="range" min="-90" max="90" step="0.1" value="-90" />
+      </label>
+      <label class="control">
+        <span>Zoom <output id="zoomValue"></output></span>
+        <input id="zoom" type="range" min="0" max="8" step="0.01" value="0" />
+      </label>
+      <label class="control check-control">
+        <span>Arcball</span>
+        <input id="arcball" type="checkbox"/>
       </label>
 
       <label class="control">
@@ -44,15 +51,17 @@
 
       <div class="buttons">
         <button id="resetRotation" type="button">Reset rotation</button>
-        <button id="downloadMesh" type="button">Download mesh JSON</button>
-        <button id="exportUrl" type="button">Export URL</button>
+        <button id="exportUrl" type="button">Export Settings</button>
       </div>
 
       <label class="control">
         <span>Mesh / OFF URL</span>
         <input id="url" type="url" placeholder="./meshes/tesseract.crfmesh.json" />
       </label>
-      <button id="loadUrl" type="button">Load URL</button>
+      <div class="buttons">
+        <button id="loadUrl" type="button">Load URL</button>
+        <button id="downloadMesh" type="button">Download mesh</button>
+      </div>
 
       <label class="control file">
         <span>Local .crfmesh.json / .off</span>
@@ -60,8 +69,8 @@
       </label>
 
       <p class="help">
-        Left drag: visible 3D spin. Right drag or two-finger drag: 4D rotation. Wheel: zw rotation.
-        URL parameters: <code>?mesh=...</code>, <code>?off=...</code>, <code>?fov=0</code>, <code>?filter=-90</code>, <code>?stereo=parallel</code>, <code>?stereo=cross</code>, <code>?panel=hide</code>, <code>?axis1=1,0,0,0&...&axis4=0,0,0,1</code>.
+        Left drag: visible 3D spin. Right drag or two-finger drag: 4D rotation. Wheel: zw rotation.<br>
+        To hide the panel by default, add <code>?panel=hide</code> to the URL.
       </p>
       <p id="status" class="status">Ready.</p>
       <p id="stats" class="help">Loading...</p>

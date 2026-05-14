@@ -1,24 +1,10 @@
 import * as THREE from 'three';
 
 function arr(v) { return [v.x, v.y, v.z, v.w]; }
-function vec4(a) { return new THREE.Vector4(a[0], a[1], a[2], a[3]); }
 function dot(a, b) { return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w; }
-function reflect(src, normal) {
-  return src.clone().addScaledVector(normal, -2 * dot(src, normal));
-}
-function rotateByReflection(src, from, tohalf) {
-  return reflect(reflect(src, from), tohalf);
-}
-function rotatePlane(v, i, j, angle) {
-  const a = arr(v);
-  const c = Math.cos(angle);
-  const s = Math.sin(angle);
-  const ai = a[i];
-  const aj = a[j];
-  a[i] = ai * c - aj * s;
-  a[j] = ai * s + aj * c;
-  v.set(a[0], a[1], a[2], a[3]);
-}
+function reflect(src, normal) { return src.clone().addScaledVector(normal, -2 * dot(src, normal)); }
+function rotateByReflection(src, from, tohalf) { return reflect(reflect(src, from), tohalf); }
+function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
 
 export class CRFControls4D {
   constructor(domElement, uniforms) {
@@ -31,12 +17,17 @@ export class CRFControls4D {
       uniforms.uAxis4.value
     ];
     this.pointerMap = new Map();
-    this.primaryMode = 'xw-yw';
-    this.secondaryMode = 'visible3d';
     this.dragSpeed = 0.006;
     this.wheelSpeed = 0.0015;
+    this.minAutoSpeed = 0.03;
+    this.maxAutoSpeed = 10.0;
+    this.lastAutoCandidate = null;
+    this.contextHandler = event => event.preventDefault();
+    this.autoReleaseGrace = 0.03;
+    this.arcballMaxRadius = 0.8;
+    this.useArcball = true;
 
-    domElement.addEventListener('contextmenu', e => e.preventDefault());
+    domElement.addEventListener('contextmenu', this.contextHandler);
     domElement.addEventListener('pointerdown', this.onPointerDown);
     domElement.addEventListener('pointermove', this.onPointerMove);
     domElement.addEventListener('pointerup', this.onPointerUp);
@@ -46,12 +37,20 @@ export class CRFControls4D {
 
   dispose() {
     const el = this.domElement;
-    el.removeEventListener('contextmenu', e => e.preventDefault());
+    el.removeEventListener('contextmenu', this.contextHandler);
     el.removeEventListener('pointerdown', this.onPointerDown);
     el.removeEventListener('pointermove', this.onPointerMove);
     el.removeEventListener('pointerup', this.onPointerUp);
     el.removeEventListener('pointercancel', this.onPointerUp);
     el.removeEventListener('wheel', this.onWheel);
+  }
+
+  now() {
+    return performance.now() * 0.001;
+  }
+
+  setUseArcball(enabled) {
+    this.useArcball = Boolean(enabled);
   }
 
   reset() {
@@ -65,16 +64,52 @@ export class CRFControls4D {
   stopAutoRotation() {
     this.uniforms.uAutoRot1Speed.value = 0;
     this.uniforms.uAutoRot2Speed.value = 0;
+    const t = this.now();
+    this.uniforms.uAutoRot1Time.value = t;
+    this.uniforms.uAutoRot2Time.value = t;
+  }
+
+  commitAutoRotation(channel) {
+    const t = this.now();
+    if (channel === 1) {
+      this.commitAutoRotationChannel(1, t, 0);
+      this.commitAutoRotationChannel(2, t, 1);
+    }
+    else {
+      this.commitAutoRotationChannel(1, t, 1);
+      this.commitAutoRotationChannel(2, t, 0);
+    }
+  }
+
+  commitAutoRotationChannel(channel, t = this.now(), cont) {
+    const from = this.uniforms[`uAutoRot${channel}From`].value;
+    const to = this.uniforms[`uAutoRot${channel}To`].value;
+    const speedUniform = this.uniforms[`uAutoRot${channel}Speed`];
+    const timeUniform = this.uniforms[`uAutoRot${channel}Time`];
+    const speed = speedUniform.value;
+    if (Math.abs(speed) > 1e-7) {
+      const elapsed = t - timeUniform.value;
+      const tohalf = from.clone().multiplyScalar(Math.cos(speed * elapsed))
+        .addScaledVector(to, Math.sin(speed * elapsed))
+        .normalize();
+      for (const axis of this.axes) axis.copy(rotateByReflection(axis, from, tohalf));
+    }
+    speedUniform.value = speed * cont;
+    timeUniform.value = t;
   }
 
   onPointerDown = (event) => {
     this.domElement.setPointerCapture(event.pointerId);
+    const willUse4D = this.pointerMap.size >= 1 || event.button === 2 || (event.buttons & 2) !== 0;
+    this.commitAutoRotation(willUse4D ? 2 : 1);
     this.pointerMap.set(event.pointerId, {
       x: event.clientX,
       y: event.clientY,
-      button: event.button
+      button: event.button,
+      lastTime: this.now(),
+      arcball: this.useArcball ? this.getArcballFromPointer(event) : null
     });
-    this.stopAutoRotation();
+    this.lastAutoCandidate = null;
   };
 
   onPointerMove = (event) => {
@@ -82,47 +117,160 @@ export class CRFControls4D {
     if (!prev) return;
 
     const active = this.pointerMap.size;
+    const now = this.now();
     const dx = event.clientX - prev.x;
     const dy = event.clientY - prev.y;
+    const dt = Math.max(1 / 240, now - prev.lastTime);
     prev.x = event.clientX;
     prev.y = event.clientY;
+    prev.lastTime = now;
 
     if (Math.abs(dx) + Math.abs(dy) < 0.0001) return;
 
-    if (active >= 2 || prev.button === 2 || event.buttons === 2) {
-      this.rotate4D(dx, dy);
-    } else {
-      this.rotate3D(dx, dy);
+    if (active >= 2 || prev.button === 2 || (event.buttons & 2) !== 0) {
+      this.rotate4D(dx, dy, dt, prev.arcball);
+     } else {
+      this.rotate3D(dx, dy, dt, prev.arcball);
     }
   };
 
   onPointerUp = (event) => {
+    const prev = this.pointerMap.get(event.pointerId);
     this.pointerMap.delete(event.pointerId);
     try { this.domElement.releasePointerCapture(event.pointerId); } catch (_) {}
+
+    if (prev && this.pointerMap.size === 0 && this.lastAutoCandidate) {
+      const age = this.now() - this.lastAutoCandidate.time;
+
+      if (age <= this.autoReleaseGrace) {
+        this.startAutoRotation(this.lastAutoCandidate);
+      }
+
+      this.lastAutoCandidate = null;
+      this.activeManualChannel = null;
+    } else if (this.pointerMap.size === 0) {
+      this.activeManualChannel = null;
+    }
   };
+
+  getArcballFromPointer(event) {
+    const rect = this.domElement.getBoundingClientRect();
+    const radius = Math.max(1, Math.min(rect.width, rect.height) * 0.5);
+
+    let x = (event.clientX - (rect.left + rect.width * 0.5)) / radius;
+    let y = -((event.clientY - (rect.top + rect.height * 0.5)) / radius);
+    const rawR = Math.hypot(x, y);
+
+    if (rawR < 1e-7) {
+      return { ux: 1, uy: 0, s: 0, c: 1 };
+    }
+
+    const r = Math.min(rawR / this.arcballMaxRadius, 1);
+
+    return {
+      ux: x / rawR,
+      uy: y / rawR,
+      s: r,
+      c: Math.sqrt(Math.max(0, 1 - r * r))
+    };
+  }
+
+  applyArcballTilt(v, arcball, depthIndex) {
+    if (!arcball || Math.abs(arcball.s) < 1e-7) return v.clone();
+
+    const a = arr(v);
+    const radial = a[0] * arcball.ux + a[1] * arcball.uy;
+    const tangentialX = a[0] - radial * arcball.ux;
+    const tangentialY = a[1] - radial * arcball.uy;
+    const depth = a[depthIndex];
+
+    // Rotate in the plane spanned by screen-radial direction and depth axis.
+    // This maps depthAxis -> s * radial + c * depthAxis.
+    const tiltedRadial = arcball.c * radial + arcball.s * depth;
+    const tiltedDepth = -arcball.s * radial + arcball.c * depth;
+
+    a[0] = tangentialX + tiltedRadial * arcball.ux;
+    a[1] = tangentialY + tiltedRadial * arcball.uy;
+    a[depthIndex] = tiltedDepth;
+    return new THREE.Vector4(a[0], a[1], a[2], a[3]);
+  }
 
   onWheel = (event) => {
     event.preventDefault();
-    this.stopAutoRotation();
-    const angle = event.deltaY * this.wheelSpeed;
-    for (const axis of this.axes) rotatePlane(axis, 2, 3, -angle);
+    this.commitAutoRotation();
+    const delta = event.deltaY * this.wheelSpeed;
+    this.rotatePlaneManual(2, 3, delta);
+    this.lastAutoCandidate = {
+      channel: 2,
+      from: new THREE.Vector4(0, 0, 1, 0),
+      to: new THREE.Vector4(0, 0, 0, Math.sign(delta) || 1),
+      speed: clamp(Math.abs(delta) / (1 / 60), this.minAutoSpeed, this.maxAutoSpeed)
+    };
   };
 
-  rotate4D(dx, dy) {
-    const sx = dx * this.dragSpeed;
-    const sy = dy * this.dragSpeed;
+  rotate4D(dx, dy, dt, arcball) {
+    const len = Math.hypot(dx, dy);
+    if (len < 0.0001) return;
+    const dir = new THREE.Vector3(dx / len, -dy / len, 0);
+    const angle = len * this.dragSpeed * 0.5;
+
+    const from = this.applyArcballTilt(new THREE.Vector4(dir.x, dir.y, 0, 0), arcball, 2).normalize();
+    const to = this.applyArcballTilt(new THREE.Vector4(0, 0, 0, 1), arcball, 2).normalize();
+    const tohalf = from.clone().multiplyScalar(Math.cos(angle)).addScaledVector(to, Math.sin(angle)).normalize();
+
+    for (const axis of this.axes) axis.copy(rotateByReflection(axis, from, tohalf));
+
+    this.lastAutoCandidate = {
+      channel: 2,
+      from,
+      to,
+      speed: clamp(angle / dt, this.minAutoSpeed, this.maxAutoSpeed),
+      time: this.now()
+    };
+  }
+
+  rotate3D(dx, dy, dt, arcball) {
+    const len = Math.hypot(dx, dy);
+    if (len < 0.0001) return;
+    const dir = new THREE.Vector3(-dx / len, dy / len, 0);
+    const angle = len * this.dragSpeed * 0.5;
+
+    const from = this.applyArcballTilt(new THREE.Vector4(dir.x, dir.y, 0, 0), arcball, 2).normalize();
+    const to = this.applyArcballTilt(new THREE.Vector4(0, 0, 1, 0), arcball, 2).normalize();
+    const tohalf = from.clone().multiplyScalar(Math.cos(angle)).addScaledVector(to, Math.sin(angle)).normalize();
+
+    for (const axis of this.axes) axis.copy(rotateByReflection(axis, from, tohalf));
+
+    this.lastAutoCandidate = {
+      channel: 1,
+      from,
+      to,
+      speed: clamp(angle / dt, this.minAutoSpeed, this.maxAutoSpeed),
+      time: this.now()
+    };
+  }
+
+  rotatePlaneManual(i, j, angle) {
     for (const axis of this.axes) {
-      rotatePlane(axis, 0, 3, sx);
-      rotatePlane(axis, 1, 3, -sy);
+      const a = arr(axis);
+      const c = Math.cos(angle);
+      const s = Math.sin(angle);
+      const ai = a[i];
+      const aj = a[j];
+      a[i] = ai * c - aj * s;
+      a[j] = ai * s + aj * c;
+      axis.set(a[0], a[1], a[2], a[3]);
     }
   }
 
-  rotate3D(dx, dy) {
-    const sx = dx * this.dragSpeed;
-    const sy = dy * this.dragSpeed;
-    for (const axis of this.axes) {
-      rotatePlane(axis, 0, 2, -sx);
-      rotatePlane(axis, 1, 2, sy);
-    }
+  startAutoRotation(candidate) {
+    const speed = candidate.speed;
+    if (!Number.isFinite(speed) || Math.abs(speed) < this.minAutoSpeed) return;
+
+    const channel = candidate.channel;
+    this.uniforms[`uAutoRot${channel}From`].value.copy(candidate.from).normalize();
+    this.uniforms[`uAutoRot${channel}To`].value.copy(candidate.to).normalize();
+    this.uniforms[`uAutoRot${channel}Speed`].value = speed;
+    this.uniforms[`uAutoRot${channel}Time`].value = this.now();
   }
 }

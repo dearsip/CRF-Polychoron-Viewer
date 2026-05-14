@@ -104,14 +104,16 @@ export function parseOFF(text) {
   let center = v4();
   for (const p of vertices4) center = add4(center, p);
   center = mul4(center, 1 / vertexCount);
-  if (len4(center) > 0.1) {
+  if (len4(center) > 0.01) {
     for (let i = 0; i < vertexCount; i++) {
       vertices4[i] = sub4(vertices4[i], center);
       if (dim === 3) vertices3[i] = sub3(vertices3[i], [center[0], center[1], center[3]]);
     }
   }
 
-  const r = 1 / len4(vertices4[0]);
+  let r = 0;
+  for (const p of vertices4) r = Math.max(len4(p), r);
+  r = 1 / r;
   for (let i = 0; i < vertexCount; i++) {
     vertices4[i] = mul4(vertices4[i], r);
     vertices3[i] = mul3(vertices3[i], r);
@@ -185,7 +187,8 @@ export function parseOFF(text) {
 }
 
 function computeFacetNormals(model) {
-  const { dim, faces, vertices3, vertices4, cellFaces } = model;
+  const { dim, faces, vertices3, vertices4, cellFaces, cellCenters } = model;
+
   if (dim === 3) {
     return faces.map(face => {
       let n = norm3(cross3(
@@ -197,22 +200,39 @@ function computeFacetNormals(model) {
     });
   }
 
-  return cellFaces.map(cf => {
-    const f1 = cf[0];
-    const f2 = cf[1];
-    const p1 = faces[f1][0];
-    const p2 = faces[f1][1];
-    const p3 = faces[f1][2];
-    let p4 = faces[f2][0];
-    if (p4 === p1 || p4 === p2 || p4 === p3) p4 = faces[f2][1];
-    if (p4 === p1 || p4 === p2 || p4 === p3) p4 = faces[f2][2];
-    let n = norm4(cross4(
-      sub4(vertices4[p2], vertices4[p1]),
-      sub4(vertices4[p3], vertices4[p1]),
-      sub4(vertices4[p4], vertices4[p1])
-    ));
-    if (dot4(n, vertices4[p1]) < 0) n = mul4(n, -1);
-    return n;
+  return cellFaces.map((cf, ci) => {
+    const f0 = faces[cf[0]];
+    const p1 = f0[0];
+    const p2 = f0[1];
+    const p3 = f0[2];
+
+    const a = sub4(vertices4[p2], vertices4[p1]);
+    const b = sub4(vertices4[p3], vertices4[p1]);
+
+    let best = v4();
+    let bestLen = 0;
+
+    for (const fi of cf) {
+      for (const p4 of faces[fi]) {
+        const c = sub4(vertices4[p4], vertices4[p1]);
+        const raw = cross4(a, b, c);
+        const l = len4(raw);
+
+        if (l > bestLen) {
+          bestLen = l;
+          best = mul4(raw, 1 / l);
+        }
+      }
+    }
+
+    if (bestLen < 1e-10) {
+      console.warn('Degenerate cell normal:', ci, cf);
+      return v4();
+    }
+
+    if (dot4(best, vertices4[p1]) < 0) best = mul4(best, -1);
+
+    return best;
   });
 }
 
@@ -253,7 +273,7 @@ export function buildRenderMesh(model, options = {}) {
       const pe = (p - (1 - p) * 2) / p;
       const col = colors[faceTypes[i] % colors.length];
       const n = facetNormals[i];
-      const boundRadius = len4(fc);
+      const boundRadius = dot4(n, fc);
 
       for (const vi of face) {
         const pos = add4(mul4(vertices4[vi], p), mul4(fc, 1 - p));
@@ -298,8 +318,8 @@ export function buildRenderMesh(model, options = {}) {
     for (let i = 0; i < cellFaces.length; i++) {
       let p = len4(sub4(vertices4[cells[i][0]], cellCenters[i]));
       p = (p - 0.1 * r) / p;
-      const boundRadius = len4(cellCenters[i]);
       const n = facetNormals[i];
+      const boundRadius = dot4(n, cellCenters[i]);
       const col = colors[cellTypes[i] % colors.length];
 
       for (const fi of cellFaces[i]) {
