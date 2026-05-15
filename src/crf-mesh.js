@@ -65,6 +65,32 @@ function parseColor(hex) {
   ];
 }
 
+function clamp01(x) {
+  return Math.min(1, Math.max(0, x));
+}
+
+function parseInlineColor(values) {
+  if (!values || values.length < 3) return null;
+  const [r, g, b, a = 1] = values;
+  if (![r, g, b, a].every(Number.isFinite)) return null;
+
+  // OFF files commonly use either 0..1 floats or 0..255 integers.
+  // Decide from the RGB channels, then normalize alpha independently.
+  const rgbScale = Math.max(Math.abs(r), Math.abs(g), Math.abs(b)) > 1 ? 255 : 1;
+  const alphaScale = Math.abs(a) > 1 ? 255 : 1;
+  return [
+    clamp01(r / rgbScale),
+    clamp01(g / rgbScale),
+    clamp01(b / rgbScale),
+    clamp01(a / alphaScale)
+  ];
+}
+
+function toColor4(value) {
+  if (Array.isArray(value)) return parseInlineColor(value) ?? [1, 1, 1, 1];
+  return parseColor(value);
+}
+
 function dataLines(text) {
   return text
     .split(/\r?\n/g)
@@ -122,12 +148,14 @@ export function parseOFF(text) {
   const faces = new Array(faceCount);
   const faceCenters = new Array(faceCount);
   const faceTypes = new Array(faceCount);
+  const faceColors = new Array(faceCount).fill(null);
   const faceTypeList = [];
 
   for (let i = 0; i < faceCount; i++) {
     const parts = lines[cursor++].split(/\s+/).map(Number);
     const n = parts[0];
     faces[i] = parts.slice(1, 1 + n);
+    faceColors[i] = parseInlineColor(parts.slice(1 + n));
 
     let type = faceTypeList.indexOf(n);
     if (type < 0) {
@@ -145,15 +173,17 @@ export function parseOFF(text) {
   const cells = new Array(cellCount);
   const cellCenters = new Array(cellCount);
   const cellTypes = new Array(cellCount);
+  const cellColors = new Array(cellCount).fill(null);
   const cellTypeList = [];
 
   for (let i = 0; i < cellCount; i++) {
     const parts = lines[cursor++].split(/\s+/).map(Number);
     const n = parts[0];
     cellFaces[i] = parts.slice(1, 1 + n);
+    cellColors[i] = parseInlineColor(parts.slice(1 + n));
 
     const histogram = new Array(32).fill(0);
-    for (const fi of cellFaces[i]) histogram[faces[fi].length]++;
+    for (const fi of cellFaces[i]) histogram[Math.min(faces[fi].length, 31)]++;
     const key = histogram.join(',');
     let type = cellTypeList.indexOf(key);
     if (type < 0) {
@@ -178,10 +208,12 @@ export function parseOFF(text) {
     faces,
     faceCenters,
     faceTypes,
+    faceColors,
     cellFaces,
     cells,
     cellCenters,
     cellTypes,
+    cellColors,
     edgeCount
   };
 }
@@ -241,7 +273,7 @@ export function buildRenderMeshFromOFF(text, options = {}) {
 }
 
 export function buildRenderMesh(model, options = {}) {
-  const colors = (options.colors ?? PRESET_COLORS).map(parseColor);
+  const colors = (options.colors ?? PRESET_COLORS).map(toColor4);
   const facetNormals = computeFacetNormals(model);
 
   const position = [];
@@ -262,7 +294,7 @@ export function buildRenderMesh(model, options = {}) {
   }
 
   let allVertexCount = 0;
-  const { dim, r, vertices4, faces, faceCenters, faceTypes, cellFaces, cells, cellCenters, cellTypes } = model;
+  const { dim, r, vertices4, faces, faceCenters, faceTypes, faceColors, cellFaces, cells, cellCenters, cellTypes, cellColors } = model;
 
   if (dim === 3) {
     for (let i = 0; i < faces.length; i++) {
@@ -271,7 +303,7 @@ export function buildRenderMesh(model, options = {}) {
       let p = len4(sub4(vertices4[face[0]], fc));
       p = (p - 0.1 * r) / p;
       const pe = (p - (1 - p) * 2) / p;
-      const col = colors[faceTypes[i] % colors.length];
+      const col = faceColors[i] ?? colors[faceTypes[i] % colors.length];
       const n = facetNormals[i];
       const boundRadius = dot4(n, fc);
 
@@ -320,7 +352,7 @@ export function buildRenderMesh(model, options = {}) {
       p = (p - 0.1 * r) / p;
       const n = facetNormals[i];
       const boundRadius = dot4(n, cellCenters[i]);
-      const col = colors[cellTypes[i] % colors.length];
+      const col = cellColors[i] ?? colors[cellTypes[i] % colors.length];
 
       for (const fi of cellFaces[i]) {
         const face = faces[fi];
@@ -375,7 +407,9 @@ export function buildRenderMesh(model, options = {}) {
       triangles: indices.length / 3,
       sourceVertices: model.vertices4.length,
       sourceFaces: model.faces.length,
-      sourceCells: model.cellFaces.length
+      sourceCells: model.cellFaces.length,
+      coloredFaces: model.faceColors?.filter(Boolean).length ?? 0,
+      coloredCells: model.cellColors?.filter(Boolean).length ?? 0
     }
   };
 }
