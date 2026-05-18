@@ -26,7 +26,6 @@ function cross3(a, b) {
   ];
 }
 
-// 4D cross product: vector perpendicular to p1, p2, p3.
 function cross4(p1, p2, p3) {
   const x = p1[1] * p2[2] * p3[3]
           + p1[3] * p2[1] * p3[2]
@@ -55,6 +54,45 @@ function cross4(p1, p2, p3) {
   return [x, y, z, w];
 }
 
+function reflect4(src, normal) {
+  const scale = 2 * dot4(src, normal);
+  return [
+    src[0] - scale * normal[0],
+    src[1] - scale * normal[1],
+    src[2] - scale * normal[2],
+    src[3] - scale * normal[3]
+  ];
+}
+
+function rotate4(src, from, toHalf) {
+  return reflect4(reflect4(src, from), toHalf);
+}
+
+function xyz4(a) {
+  return [a[0], a[1], a[2]];
+}
+
+function computeLightingNormal(pos, another, face, normal4) {
+  const wAxis = v4(0, 0, 0, 1);
+  const roter = mul4(add4(normal4, wAxis), 0.5);
+
+  let localPos = pos;
+  let localAnother = another;
+  let localFace = face;
+
+  if (len4(roter) > 0.0001) {
+    const rot = norm4(roter);
+    localPos = rotate4(pos, rot, wAxis);
+    localAnother = rotate4(another, rot, wAxis);
+    localFace = rotate4(face, rot, wAxis);
+  }
+
+  return norm3(cross3(
+    sub3(xyz4(localAnother), xyz4(localFace)),
+    sub3(xyz4(localPos), xyz4(localFace))
+  ));
+}
+
 function parseColor(hex) {
   const s = hex.replace('#', '');
   return [
@@ -74,8 +112,6 @@ function parseInlineColor(values) {
   const [r, g, b, a = 1] = values;
   if (![r, g, b, a].every(Number.isFinite)) return null;
 
-  // OFF files commonly use either 0..1 floats or 0..255 integers.
-  // Decide from the RGB channels, then normalize alpha independently.
   const rgbScale = Math.max(Math.abs(r), Math.abs(g), Math.abs(b)) > 1 ? 255 : 1;
   const alphaScale = Math.abs(a) > 1 ? 255 : 1;
   return [
@@ -278,17 +314,15 @@ export function buildRenderMesh(model, options = {}) {
 
   const position = [];
   const position4 = [];
-  const another4 = [];
-  const face4 = [];
+  const lightingNormal = [];
   const normal4 = [];
   const color = [];
   const indices = [];
 
-  function pushVertex(boundRadius, pos, another, face, normal, col) {
+  function pushVertex(boundRadius, pos, normal, lightNormal, col) {
     position.push(boundRadius, boundRadius, boundRadius);
     position4.push(...pos);
-    another4.push(...(another ?? pos));
-    face4.push(...face);
+    lightingNormal.push(...lightNormal);
     normal4.push(...normal);
     color.push(...col);
   }
@@ -306,12 +340,31 @@ export function buildRenderMesh(model, options = {}) {
       const col = faceColors[i] ?? colors[faceTypes[i] % colors.length];
       const n = facetNormals[i];
       const boundRadius = dot4(n, fc);
+      const outerPositions = [];
+      const innerPositions = [];
 
       for (const vi of face) {
         const pos = add4(mul4(vertices4[vi], p), mul4(fc, 1 - p));
-        pushVertex(boundRadius, pos, null, fc, n, col);
-        const inner = add4(mul4(pos, pe), mul4(fc, 1 - pe));
-        pushVertex(boundRadius, inner, null, fc, n, col);
+        outerPositions.push(pos);
+        innerPositions.push(add4(mul4(pos, pe), mul4(fc, 1 - pe)));
+      }
+
+      for (let k = 0; k < face.length; k++) {
+        const next = (k + 1) % face.length;
+        pushVertex(
+          boundRadius,
+          outerPositions[k],
+          n,
+          computeLightingNormal(outerPositions[k], outerPositions[next], fc, n),
+          col
+        );
+        pushVertex(
+          boundRadius,
+          innerPositions[k],
+          n,
+          computeLightingNormal(innerPositions[k], innerPositions[next], fc, n),
+          col
+        );
       }
 
       for (let k = 0; k < face.length - 1; k++) {
@@ -320,29 +373,6 @@ export function buildRenderMesh(model, options = {}) {
       }
       indices.push(allVertexCount + 2 * face.length - 2, allVertexCount + 2 * face.length - 1, allVertexCount + 1);
       indices.push(allVertexCount + 2 * face.length - 2, allVertexCount + 1, allVertexCount);
-
-      for (let k = 0; k < face.length - 1; k++) {
-        const a = allVertexCount + 2 * (k + 1);
-        another4[allVertexCount * 4 + 2 * k * 4 + 0] = position4[a * 4 + 0];
-        another4[allVertexCount * 4 + 2 * k * 4 + 1] = position4[a * 4 + 1];
-        another4[allVertexCount * 4 + 2 * k * 4 + 2] = position4[a * 4 + 2];
-        another4[allVertexCount * 4 + 2 * k * 4 + 3] = position4[a * 4 + 3];
-        const b = a + 1;
-        another4[(allVertexCount + 2 * k + 1) * 4 + 0] = position4[b * 4 + 0];
-        another4[(allVertexCount + 2 * k + 1) * 4 + 1] = position4[b * 4 + 1];
-        another4[(allVertexCount + 2 * k + 1) * 4 + 2] = position4[b * 4 + 2];
-        another4[(allVertexCount + 2 * k + 1) * 4 + 3] = position4[b * 4 + 3];
-      }
-      const a = allVertexCount;
-      const b = allVertexCount + 1;
-      another4[(allVertexCount + 2 * face.length - 2) * 4 + 0] = position4[a * 4 + 0];
-      another4[(allVertexCount + 2 * face.length - 2) * 4 + 1] = position4[a * 4 + 1];
-      another4[(allVertexCount + 2 * face.length - 2) * 4 + 2] = position4[a * 4 + 2];
-      another4[(allVertexCount + 2 * face.length - 2) * 4 + 3] = position4[a * 4 + 3];
-      another4[(allVertexCount + 2 * face.length - 1) * 4 + 0] = position4[b * 4 + 0];
-      another4[(allVertexCount + 2 * face.length - 1) * 4 + 1] = position4[b * 4 + 1];
-      another4[(allVertexCount + 2 * face.length - 1) * 4 + 2] = position4[b * 4 + 2];
-      another4[(allVertexCount + 2 * face.length - 1) * 4 + 3] = position4[b * 4 + 3];
 
       allVertexCount += 2 * face.length;
     }
@@ -362,11 +392,30 @@ export function buildRenderMesh(model, options = {}) {
         const orient = dot4(vertices4[face[1]], cross4(cellCenters[i], fc, vertices4[face[0]])) > 0;
         const ordered = orient ? face : [...face].reverse();
 
+        const outerPositions = [];
+        const innerPositions = [];
         for (const vi of ordered) {
           const pos = add4(mul4(vertices4[vi], p), mul4(cellCenters[i], 1 - p));
-          pushVertex(boundRadius, pos, null, fc, n, col);
-          const inner = add4(mul4(pos, pe), mul4(fc, 1 - pe));
-          pushVertex(boundRadius, inner, null, fc, n, col);
+          outerPositions.push(pos);
+          innerPositions.push(add4(mul4(pos, pe), mul4(fc, 1 - pe)));
+        }
+
+        for (let k = 0; k < face.length; k++) {
+          const next = (k + 1) % face.length;
+          pushVertex(
+            boundRadius,
+            outerPositions[k],
+            n,
+            computeLightingNormal(outerPositions[k], outerPositions[next], fc, n),
+            col
+          );
+          pushVertex(
+            boundRadius,
+            innerPositions[k],
+            n,
+            computeLightingNormal(innerPositions[k], innerPositions[next], fc, n),
+            col
+          );
         }
 
         for (let k = 0; k < face.length - 1; k++) {
@@ -375,13 +424,6 @@ export function buildRenderMesh(model, options = {}) {
         }
         indices.push(allVertexCount + 2 * face.length - 2, allVertexCount + 2 * face.length - 1, allVertexCount + 1);
         indices.push(allVertexCount + 2 * face.length - 2, allVertexCount + 1, allVertexCount);
-
-        for (let k = 0; k < face.length - 1; k++) {
-          copy4(position4, allVertexCount + 2 * (k + 1), another4, allVertexCount + 2 * k);
-          copy4(position4, allVertexCount + 2 * (k + 1) + 1, another4, allVertexCount + 2 * k + 1);
-        }
-        copy4(position4, allVertexCount, another4, allVertexCount + 2 * face.length - 2);
-        copy4(position4, allVertexCount + 1, another4, allVertexCount + 2 * face.length - 1);
 
         allVertexCount += 2 * face.length;
       }
@@ -395,8 +437,7 @@ export function buildRenderMesh(model, options = {}) {
     attributes: {
       position,
       position4,
-      another4,
-      face4,
+      lightingNormal,
       normal4,
       color
     },
@@ -412,15 +453,6 @@ export function buildRenderMesh(model, options = {}) {
       coloredCells: model.cellColors?.filter(Boolean).length ?? 0
     }
   };
-}
-
-function copy4(src, srcIndex, dst, dstIndex) {
-  const si = srcIndex * 4;
-  const di = dstIndex * 4;
-  dst[di] = src[si];
-  dst[di + 1] = src[si + 1];
-  dst[di + 2] = src[si + 2];
-  dst[di + 3] = src[si + 3];
 }
 
 export function roundMesh(mesh, digits = 6) {

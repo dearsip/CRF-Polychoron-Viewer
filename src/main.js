@@ -258,8 +258,7 @@ function createGeometry(data) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(a.position), 3));
   geometry.setAttribute('aPosition4', new THREE.BufferAttribute(new Float32Array(a.position4), 4));
-  geometry.setAttribute('aAnother4', new THREE.BufferAttribute(new Float32Array(a.another4), 4));
-  geometry.setAttribute('aFace4', new THREE.BufferAttribute(new Float32Array(a.face4), 4));
+  geometry.setAttribute('aLightingNormal', new THREE.BufferAttribute(new Float32Array(a.lightingNormal), 3));
   geometry.setAttribute('aNormal4', new THREE.BufferAttribute(new Float32Array(a.normal4), 4));
   geometry.setAttribute('aColor', new THREE.BufferAttribute(new Float32Array(a.color), 4));
   const IndexArray = vertexCount > 65535 ? Uint32Array : Uint16Array;

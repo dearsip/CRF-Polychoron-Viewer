@@ -1,7 +1,6 @@
 export const crfVertexShader = /* glsl */`
 attribute vec4 aPosition4;
-attribute vec4 aAnother4;
-attribute vec4 aFace4;
+attribute vec3 aLightingNormal;
 attribute vec4 aNormal4;
 attribute vec4 aColor;
 
@@ -30,10 +29,6 @@ vec4 reflect4(vec4 src, vec4 normal) {
 
 vec4 rotate4(vec4 src, vec4 from, vec4 tohalf) {
   return reflect4(reflect4(src, from), tohalf);
-}
-
-vec4 rotI(vec4 src, vec4 rot) {
-  return rotate4(src, rot, vec4(0.0, 0.0, 0.0, 1.0));
 }
 
 vec4 applyAxis(vec4 p) {
@@ -71,19 +66,7 @@ void main() {
     return;
   }
 
-  vec4 localPos = aPosition4;
-  vec4 localAnother = aAnother4;
-  vec4 localFace = aFace4;
-  vec4 roter = (aNormal4 + vec4(0.0, 0.0, 0.0, 1.0)) * 0.5;
-  if (length(roter) > 0.0001) {
-    roter = normalize(roter);
-    localPos = rotI(aPosition4, roter);
-    localAnother = rotI(aAnother4, roter);
-    localFace = rotI(aFace4, roter);
-  }
-
-  vec3 normal = normalize(cross((localAnother - localFace).xyz, (localPos - localFace).xyz));
-  float diff = abs(dot(normal, normalize(uLightDir)));
+  float diff = abs(dot(aLightingNormal, normalize(uLightDir)));
 
   vec4 p = applyAutoRotation(applyAxis(aPosition4));
   projected = p.xyz;
