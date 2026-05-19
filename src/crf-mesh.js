@@ -335,7 +335,7 @@ export function buildRenderMesh(model, options = {}) {
       const face = faces[i];
       const fc = faceCenters[i];
       let p = len4(sub4(vertices4[face[0]], fc));
-      p = (p - 0.1 * r) / p;
+      p = Math.max((p - 0.1 * r) / p, 0.85);
       const pe = (p - (1 - p) * 2) / p;
       const col = faceColors[i] ?? colors[faceTypes[i] % colors.length];
       const n = facetNormals[i];
@@ -379,7 +379,7 @@ export function buildRenderMesh(model, options = {}) {
   } else {
     for (let i = 0; i < cellFaces.length; i++) {
       let p = len4(sub4(vertices4[cells[i][0]], cellCenters[i]));
-      p = (p - 0.1 * r) / p;
+      p = Math.max((p - 0.1 * r) / p, 0.85);
       const n = facetNormals[i];
       const boundRadius = dot4(n, cellCenters[i]);
       const col = cellColors[i] ?? colors[cellTypes[i] % colors.length];
@@ -388,7 +388,7 @@ export function buildRenderMesh(model, options = {}) {
         const face = faces[fi];
         const fc = faceCenters[fi];
         let pe = len4(sub4(vertices4[face[0]], fc)) * p;
-        pe = (pe - 0.1 * r) / pe;
+        pe = Math.max((pe - 0.1 * r) / pe, 0.85);
         const orient = dot4(vertices4[face[1]], cross4(cellCenters[i], fc, vertices4[face[0]])) > 0;
         const ordered = orient ? face : [...face].reverse();
 
